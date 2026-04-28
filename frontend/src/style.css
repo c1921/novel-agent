@@ -13,3 +13,75 @@
 /* @import "flyonui/src/vendor/raty.css"; */
 /* @import "flyonui/src/vendor/waves.css"; */
 /* @import "flyonui/src/vendor/apexcharts.css"; */
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+textarea,
+input,
+select {
+  font: inherit;
+}
+
+.form-input,
+.form-textarea,
+.form-select {
+  width: 100%;
+  border: 1px solid rgb(203 213 225);
+  border-radius: 6px;
+  background: white;
+  padding: 0.55rem 0.7rem;
+  color: rgb(15 23 42);
+}
+
+.form-textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: 6px;
+  border: 1px solid rgb(203 213 225);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.btn-primary {
+  border-color: rgb(37 99 235);
+  background: rgb(37 99 235);
+  color: white;
+}
+
+.btn-danger {
+  border-color: rgb(220 38 38);
+  color: rgb(185 28 28);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.panel {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 8px;
+  background: white;
+}
+
+.panel-header {
+  border-bottom: 1px solid rgb(226 232 240);
+  padding: 0.8rem 1rem;
+  font-weight: 700;
+}
+
+.panel-body {
+  padding: 1rem;
+}
