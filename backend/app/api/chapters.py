@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,7 @@ from app.api.projects import get_project_or_404
 from app.database import get_db
 
 router = APIRouter(prefix="/api/projects/{project_id}/chapters", tags=["chapters"])
+logger = logging.getLogger(__name__)
 
 
 def get_chapter_or_404(project_id: int, chapter_id: int, db: Session) -> models.Chapter:
@@ -30,7 +33,9 @@ def create_chapter(
     db: Session = Depends(get_db),
 ):
     get_project_or_404(project_id, db)
-    return crud.create_chapter(db, project_id, payload)
+    item = crud.create_chapter(db, project_id, payload)
+    logger.info("crud.create resource=chapter project_id=%s entity_id=%s number=%s", project_id, item.id, item.chapter_number)
+    return item
 
 
 @router.get("/{chapter_id}", response_model=schemas.ChapterRead)
@@ -49,6 +54,12 @@ def update_chapter(
     crud.apply_update(item, payload)
     db.commit()
     db.refresh(item)
+    logger.info(
+        "crud.update resource=chapter project_id=%s entity_id=%s fields=%s",
+        project_id,
+        chapter_id,
+        ",".join(payload.model_dump(exclude_unset=True).keys()),
+    )
     return item
 
 
@@ -56,4 +67,5 @@ def update_chapter(
 def delete_chapter(project_id: int, chapter_id: int, db: Session = Depends(get_db)):
     item = get_chapter_or_404(project_id, chapter_id, db)
     crud.delete_instance(db, item)
+    logger.info("crud.delete resource=chapter project_id=%s entity_id=%s", project_id, chapter_id)
     return {"ok": True}

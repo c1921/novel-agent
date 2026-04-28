@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app import models
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def project_index_dir(project_id: int) -> Path:
@@ -121,9 +125,16 @@ def _persist_documents(index_dir: Path, documents: list[dict[str, Any]]) -> None
 
 
 def rebuild_project_index(project_id: int, db: Session) -> dict[str, Any]:
+    started_at = perf_counter()
     documents = collect_project_documents(db, project_id)
     index_dir = project_index_dir(project_id)
     _persist_documents(index_dir, documents)
+    logger.info(
+        "rag.rebuild_start project_id=%s documents=%s index_dir=%s",
+        project_id,
+        len(documents),
+        index_dir,
+    )
 
     backend = "keyword"
     if documents:
@@ -143,11 +154,24 @@ def rebuild_project_index(project_id: int, db: Session) -> dict[str, Any]:
             index.storage_context.persist(persist_dir=str(index_dir / "llama"))
             backend = "llama-index"
         except Exception:
+            logger.exception(
+                "rag.rebuild_llama_failed project_id=%s documents=%s fallback=keyword",
+                project_id,
+                len(documents),
+            )
             backend = "keyword"
 
-    return {
+    result = {
         "project_id": project_id,
         "document_count": len(documents),
         "backend": backend,
         "message": "Index rebuilt" if documents else "Project has no documents to index",
     }
+    logger.info(
+        "rag.rebuild_done project_id=%s documents=%s backend=%s elapsed_ms=%.2f",
+        project_id,
+        len(documents),
+        backend,
+        (perf_counter() - started_at) * 1000,
+    )
+    return result

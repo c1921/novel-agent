@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -16,6 +17,8 @@ from app.agent.prompts import (
 )
 from app.agent.state import NovelAgentState
 from app.rag.retriever import retrieve_project_context
+
+logger = logging.getLogger(__name__)
 
 
 def _state(state: NovelAgentState) -> NovelAgentState:
@@ -60,18 +63,36 @@ def _project_context(db: Session, project_id: int) -> str:
 
 def load_project_context(state: NovelAgentState, db: Session) -> NovelAgentState:
     next_state = _state(state)
-    next_state["project_context"] = _project_context(db, int(next_state["project_id"]))
+    project_id = int(next_state["project_id"])
+    logger.info("agent.node_start node=load_project_context project_id=%s", project_id)
+    next_state["project_context"] = _project_context(db, project_id)
     _append_message(next_state, "system", "Loaded project context.")
+    logger.info(
+        "agent.node_done node=load_project_context project_id=%s context_chars=%s",
+        project_id,
+        len(next_state.get("project_context", "")),
+    )
     return next_state
 
 
 def retrieve_relevant_knowledge(state: NovelAgentState, db: Session) -> NovelAgentState:
     next_state = _state(state)
+    project_id = int(next_state["project_id"])
+    logger.info(
+        "agent.node_start node=retrieve_relevant_knowledge project_id=%s query_goal_chars=%s",
+        project_id,
+        len(next_state.get("user_goal", "")),
+    )
     query = f"{next_state.get('user_goal', '')}\n{next_state.get('project_context', '')[:1000]}"
     next_state["retrieved_context"] = retrieve_project_context(
-        int(next_state["project_id"]), query, db, top_k=6
+        project_id, query, db, top_k=6
     )
     _append_message(next_state, "system", "Retrieved project knowledge.")
+    logger.info(
+        "agent.node_done node=retrieve_relevant_knowledge project_id=%s results=%s",
+        project_id,
+        len(next_state.get("retrieved_context", [])),
+    )
     return next_state
 
 
@@ -129,6 +150,13 @@ def _normalize_questions(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], lis
 
 def generate_plot_questions(state: NovelAgentState, db: Session) -> NovelAgentState:
     next_state = _state(state)
+    project_id = int(next_state["project_id"])
+    chapter_id = int(next_state["chapter_id"])
+    logger.info(
+        "agent.node_start node=generate_plot_questions project_id=%s chapter_id=%s",
+        project_id,
+        chapter_id,
+    )
     payload = json.dumps(
         {
             "project_context": next_state.get("project_context", ""),
@@ -149,11 +177,29 @@ def generate_plot_questions(state: NovelAgentState, db: Session) -> NovelAgentSt
     next_state["auto_decidable"] = auto_decidable
     next_state["next_action"] = "answer_plot_questions"
     _append_message(next_state, "assistant", "Generated plot questions.")
+    logger.info(
+        "agent.node_done node=generate_plot_questions project_id=%s chapter_id=%s questions=%s must_ask=%s auto_decidable=%s next_action=%s",
+        project_id,
+        chapter_id,
+        len(questions),
+        sum(1 for question in questions if question.get("type") == "must_ask"),
+        len(auto_decidable),
+        next_state["next_action"],
+    )
     return next_state
 
 
 def generate_chapter_outline(state: NovelAgentState, db: Session) -> NovelAgentState:
     next_state = _state(state)
+    project_id = int(next_state["project_id"])
+    chapter_id = int(next_state["chapter_id"])
+    logger.info(
+        "agent.node_start node=generate_chapter_outline project_id=%s chapter_id=%s answers=%s revision_chars=%s",
+        project_id,
+        chapter_id,
+        len(next_state.get("user_answers", [])),
+        len(next_state.get("outline_revision_instruction", "")),
+    )
     payload = json.dumps(
         {
             "project_context": next_state.get("project_context") or _project_context(
@@ -177,11 +223,26 @@ def generate_chapter_outline(state: NovelAgentState, db: Session) -> NovelAgentS
     next_state["chapter_outline"] = outline
     next_state["next_action"] = "approve_outline"
     _append_message(next_state, "assistant", "Generated chapter outline.")
+    logger.info(
+        "agent.node_done node=generate_chapter_outline project_id=%s chapter_id=%s outline_chars=%s next_action=%s",
+        project_id,
+        chapter_id,
+        len(outline),
+        next_state["next_action"],
+    )
     return next_state
 
 
 def generate_draft(state: NovelAgentState, db: Session) -> NovelAgentState:
     next_state = _state(state)
+    project_id = int(next_state["project_id"])
+    chapter_id = int(next_state["chapter_id"])
+    logger.info(
+        "agent.node_start node=generate_draft project_id=%s chapter_id=%s outline_chars=%s",
+        project_id,
+        chapter_id,
+        len(next_state.get("chapter_outline", "")),
+    )
     payload = json.dumps(
         {
             "project_context": next_state.get("project_context") or _project_context(
@@ -202,11 +263,25 @@ def generate_draft(state: NovelAgentState, db: Session) -> NovelAgentState:
         temperature=0.7,
     )
     _append_message(next_state, "assistant", "Generated draft.")
+    logger.info(
+        "agent.node_done node=generate_draft project_id=%s chapter_id=%s draft_chars=%s",
+        project_id,
+        chapter_id,
+        len(next_state.get("draft", "")),
+    )
     return next_state
 
 
 def polish_draft(state: NovelAgentState, db: Session) -> NovelAgentState:
     next_state = _state(state)
+    project_id = int(next_state["project_id"])
+    chapter_id = int(next_state["chapter_id"])
+    logger.info(
+        "agent.node_start node=polish_draft project_id=%s chapter_id=%s draft_chars=%s",
+        project_id,
+        chapter_id,
+        len(next_state.get("draft", "")),
+    )
     payload = json.dumps(
         {
             "approved_outline": next_state.get("chapter_outline", ""),
@@ -222,11 +297,25 @@ def polish_draft(state: NovelAgentState, db: Session) -> NovelAgentState:
         temperature=0.5,
     )
     _append_message(next_state, "assistant", "Polished draft.")
+    logger.info(
+        "agent.node_done node=polish_draft project_id=%s chapter_id=%s polished_chars=%s",
+        project_id,
+        chapter_id,
+        len(next_state.get("polished_draft", "")),
+    )
     return next_state
 
 
 def consistency_check(state: NovelAgentState, db: Session) -> NovelAgentState:
     next_state = _state(state)
+    project_id = int(next_state["project_id"])
+    chapter_id = int(next_state["chapter_id"])
+    logger.info(
+        "agent.node_start node=consistency_check project_id=%s chapter_id=%s draft_chars=%s",
+        project_id,
+        chapter_id,
+        len(next_state.get("polished_draft") or next_state.get("draft", "")),
+    )
     payload = json.dumps(
         {
             "project_context": next_state.get("project_context") or _project_context(
@@ -250,10 +339,23 @@ def consistency_check(state: NovelAgentState, db: Session) -> NovelAgentState:
     next_state["consistency_report"] = report
     next_state["next_action"] = "review_draft"
     _append_message(next_state, "assistant", "Completed consistency check.")
+    logger.info(
+        "agent.node_done node=consistency_check project_id=%s chapter_id=%s issues=%s next_action=%s",
+        project_id,
+        chapter_id,
+        len(report.get("issues", [])),
+        next_state["next_action"],
+    )
     return next_state
 
 
 def save_chapter_from_state(state: NovelAgentState, db: Session, use_polished: bool) -> models.Chapter:
+    logger.info(
+        "agent.save_chapter_start project_id=%s chapter_id=%s use_polished=%s",
+        state.get("project_id"),
+        state.get("chapter_id"),
+        use_polished,
+    )
     chapter = db.get(models.Chapter, int(state["chapter_id"]))
     if not chapter:
         raise ValueError("Chapter not found")
@@ -266,4 +368,12 @@ def save_chapter_from_state(state: NovelAgentState, db: Session, use_polished: b
     chapter.status = "saved"
     db.commit()
     db.refresh(chapter)
+    logger.info(
+        "agent.save_chapter_done project_id=%s chapter_id=%s draft_chars=%s polished_chars=%s status=%s",
+        chapter.project_id,
+        chapter.id,
+        len(chapter.draft or ""),
+        len(chapter.polished_draft or ""),
+        chapter.status,
+    )
     return chapter

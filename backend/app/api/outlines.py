@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,7 @@ from app.api.projects import get_project_or_404
 from app.database import get_db
 
 router = APIRouter(prefix="/api/projects/{project_id}/outlines", tags=["outlines"])
+logger = logging.getLogger(__name__)
 
 
 def get_outline_or_404(project_id: int, outline_id: int, db: Session) -> models.Outline:
@@ -30,7 +33,9 @@ def create_outline(
     db: Session = Depends(get_db),
 ):
     get_project_or_404(project_id, db)
-    return crud.create_outline(db, project_id, payload)
+    item = crud.create_outline(db, project_id, payload)
+    logger.info("crud.create resource=outline project_id=%s entity_id=%s", project_id, item.id)
+    return item
 
 
 @router.patch("/{outline_id}", response_model=schemas.OutlineRead)
@@ -44,6 +49,12 @@ def update_outline(
     crud.apply_update(item, payload)
     db.commit()
     db.refresh(item)
+    logger.info(
+        "crud.update resource=outline project_id=%s entity_id=%s fields=%s",
+        project_id,
+        outline_id,
+        ",".join(payload.model_dump(exclude_unset=True).keys()),
+    )
     return item
 
 
@@ -51,4 +62,5 @@ def update_outline(
 def delete_outline(project_id: int, outline_id: int, db: Session = Depends(get_db)):
     item = get_outline_or_404(project_id, outline_id, db)
     crud.delete_instance(db, item)
+    logger.info("crud.delete resource=outline project_id=%s entity_id=%s", project_id, outline_id)
     return {"ok": True}

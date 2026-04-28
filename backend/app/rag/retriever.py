@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.rag.indexer import collect_project_documents, project_index_dir, rebuild_project_index
+
+logger = logging.getLogger(__name__)
 
 
 def _load_documents(index_dir: Path) -> list[dict[str, Any]]:
@@ -38,14 +42,25 @@ def _keyword_retrieve(documents: list[dict[str, Any]], query: str, top_k: int) -
 
 
 def retrieve_project_context(project_id: int, query: str, db: Session, top_k: int = 6) -> list[str]:
+    started_at = perf_counter()
     index_dir = project_index_dir(project_id)
     documents = _load_documents(index_dir)
     if not documents:
+        logger.info(
+            "rag.retrieve_no_persisted_documents project_id=%s index_dir=%s",
+            project_id,
+            index_dir,
+        )
         documents = collect_project_documents(db, project_id)
         if documents:
             rebuild_project_index(project_id, db)
 
     if not documents:
+        logger.info(
+            "rag.retrieve_done project_id=%s backend=none documents=0 results=0 elapsed_ms=%.2f",
+            project_id,
+            (perf_counter() - started_at) * 1000,
+        )
         return []
 
     llama_dir = index_dir / "llama"
@@ -59,8 +74,32 @@ def retrieve_project_context(project_id: int, query: str, db: Session, top_k: in
             index = load_index_from_storage(storage_context)
             retriever = index.as_retriever(similarity_top_k=top_k)
             nodes = retriever.retrieve(query)
-            return [node.get_content() for node in nodes]
+            results = [node.get_content() for node in nodes]
+            logger.info(
+                "rag.retrieve_done project_id=%s backend=llama-index documents=%s top_k=%s results=%s query_chars=%s elapsed_ms=%.2f",
+                project_id,
+                len(documents),
+                top_k,
+                len(results),
+                len(query),
+                (perf_counter() - started_at) * 1000,
+            )
+            return results
         except Exception:
+            logger.exception(
+                "rag.retrieve_llama_failed project_id=%s fallback=keyword",
+                project_id,
+            )
             pass
 
-    return _keyword_retrieve(documents, query, top_k)
+    results = _keyword_retrieve(documents, query, top_k)
+    logger.info(
+        "rag.retrieve_done project_id=%s backend=keyword documents=%s top_k=%s results=%s query_chars=%s elapsed_ms=%.2f",
+        project_id,
+        len(documents),
+        top_k,
+        len(results),
+        len(query),
+        (perf_counter() - started_at) * 1000,
+    )
+    return results

@@ -20,6 +20,9 @@ OPENAI_MODEL=gpt-4o-mini
 LLM_PROVIDER=auto
 DATABASE_URL=sqlite:///./storage/novel_agent.db
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+APP_LOG_LEVEL=INFO
+APP_LOG_TO_FILE=true
+APP_LOG_FILE=./storage/logs/app.log
 ```
 
 `LLM_PROVIDER=auto` 时，如果没有 `OPENAI_API_KEY` 会使用 Mock Provider；设置 key 后会调用 OpenAI 风格 `/chat/completions` 接口。
@@ -66,6 +69,22 @@ npm run dev -- --port 5174
 ```
 
 SQLite 表会在后端启动时自动创建，不需要手动迁移。
+
+## 日志
+
+后端会输出应用日志到控制台，并在 `APP_LOG_TO_FILE=true` 时写入：
+
+```text
+backend/storage/logs/app.log
+```
+
+日志默认不记录完整 prompt、模型响应正文或 API key，只记录 provider、model、耗时、输入/输出长度、Agent 阶段、RAG 命中数量和 API 请求耗时。调试时可以调整：
+
+```env
+APP_LOG_LEVEL=INFO
+APP_LOG_TO_FILE=true
+APP_LOG_FILE=./storage/logs/app.log
+```
 
 ## MVP 使用流程
 

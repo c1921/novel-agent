@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+from time import perf_counter
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 from app.config import settings
 
 Message = dict[str, str]
+logger = logging.getLogger(__name__)
 
 
 def _use_mock() -> bool:
@@ -19,6 +23,14 @@ def _use_mock() -> bool:
 
 def _all_content(messages: list[Message]) -> str:
     return "\n".join(message.get("content", "") for message in messages)
+
+
+def _message_chars(messages: list[Message]) -> int:
+    return sum(len(message.get("content", "")) for message in messages)
+
+
+def _base_url_host() -> str:
+    return urlparse(settings.openai_base_url).netloc or settings.openai_base_url
 
 
 def _mock_chat(messages: list[Message]) -> str:
@@ -134,8 +146,20 @@ def _extract_json(text: str) -> Any:
 
 
 def chat_completion(messages: list[Message], temperature: float = 0.7) -> str:
+    started_at = perf_counter()
+    input_chars = _message_chars(messages)
     if _use_mock():
-        return _mock_chat(messages)
+        result = _mock_chat(messages)
+        logger.info(
+            "llm.chat provider=mock model=%s temperature=%.2f messages=%s input_chars=%s output_chars=%s elapsed_ms=%.2f",
+            settings.openai_model,
+            temperature,
+            len(messages),
+            input_chars,
+            len(result),
+            (perf_counter() - started_at) * 1000,
+        )
+        return result
 
     url = settings.openai_base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
@@ -144,19 +168,84 @@ def chat_completion(messages: list[Message], temperature: float = 0.7) -> str:
         "messages": messages,
         "temperature": temperature,
     }
-    with httpx.Client(timeout=120) as client:
-        response = client.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-    return data["choices"][0]["message"]["content"]
+    logger.info(
+        "llm.chat_start provider=openai model=%s base_url_host=%s temperature=%.2f messages=%s input_chars=%s",
+        settings.openai_model,
+        _base_url_host(),
+        temperature,
+        len(messages),
+        input_chars,
+    )
+    try:
+        with httpx.Client(timeout=120) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        result = data["choices"][0]["message"]["content"]
+        usage = data.get("usage") or {}
+        logger.info(
+            "llm.chat_success provider=openai model=%s status=%s output_chars=%s prompt_tokens=%s completion_tokens=%s elapsed_ms=%.2f",
+            settings.openai_model,
+            response.status_code,
+            len(result),
+            usage.get("prompt_tokens"),
+            usage.get("completion_tokens"),
+            (perf_counter() - started_at) * 1000,
+        )
+        return result
+    except httpx.HTTPStatusError as exc:
+        logger.exception(
+            "llm.chat_http_error provider=openai model=%s status=%s elapsed_ms=%.2f",
+            settings.openai_model,
+            exc.response.status_code,
+            (perf_counter() - started_at) * 1000,
+        )
+        raise
+    except Exception:
+        logger.exception(
+            "llm.chat_error provider=openai model=%s elapsed_ms=%.2f",
+            settings.openai_model,
+            (perf_counter() - started_at) * 1000,
+        )
+        raise
 
 
 def json_completion(messages: list[Message], temperature: float = 0.3) -> dict[str, Any]:
+    started_at = perf_counter()
+    input_chars = _message_chars(messages)
     if _use_mock():
-        return _mock_json(messages)
+        result = _mock_json(messages)
+        logger.info(
+            "llm.json provider=mock model=%s temperature=%.2f messages=%s input_chars=%s keys=%s elapsed_ms=%.2f",
+            settings.openai_model,
+            temperature,
+            len(messages),
+            input_chars,
+            ",".join(sorted(result.keys())),
+            (perf_counter() - started_at) * 1000,
+        )
+        return result
 
     text = chat_completion(messages, temperature=temperature)
-    parsed = _extract_json(text)
-    if not isinstance(parsed, dict):
-        raise ValueError("LLM JSON response must be an object")
-    return parsed
+    try:
+        parsed = _extract_json(text)
+        if not isinstance(parsed, dict):
+            raise ValueError("LLM JSON response must be an object")
+        logger.info(
+            "llm.json_success provider=openai model=%s input_chars=%s output_chars=%s keys=%s elapsed_ms=%.2f",
+            settings.openai_model,
+            input_chars,
+            len(text),
+            ",".join(sorted(parsed.keys())),
+            (perf_counter() - started_at) * 1000,
+        )
+        return parsed
+    except Exception:
+        logger.exception(
+            "llm.json_parse_error provider=openai model=%s input_chars=%s output_chars=%s elapsed_ms=%.2f",
+            settings.openai_model,
+            input_chars,
+            len(text),
+            (perf_counter() - started_at) * 1000,
+        )
+        raise

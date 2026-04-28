@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,7 @@ from app.api.projects import get_project_or_404
 from app.database import get_db
 
 router = APIRouter(prefix="/api/projects/{project_id}/foreshadowing", tags=["foreshadowing"])
+logger = logging.getLogger(__name__)
 
 
 def get_foreshadowing_or_404(
@@ -32,7 +35,9 @@ def create_foreshadowing(
     db: Session = Depends(get_db),
 ):
     get_project_or_404(project_id, db)
-    return crud.create_foreshadowing(db, project_id, payload)
+    item = crud.create_foreshadowing(db, project_id, payload)
+    logger.info("crud.create resource=foreshadowing project_id=%s entity_id=%s", project_id, item.id)
+    return item
 
 
 @router.patch("/{foreshadowing_id}", response_model=schemas.ForeshadowingRead)
@@ -46,6 +51,12 @@ def update_foreshadowing(
     crud.apply_update(item, payload)
     db.commit()
     db.refresh(item)
+    logger.info(
+        "crud.update resource=foreshadowing project_id=%s entity_id=%s fields=%s",
+        project_id,
+        foreshadowing_id,
+        ",".join(payload.model_dump(exclude_unset=True).keys()),
+    )
     return item
 
 
@@ -55,4 +66,5 @@ def delete_foreshadowing(
 ):
     item = get_foreshadowing_or_404(project_id, foreshadowing_id, db)
     crud.delete_instance(db, item)
+    logger.info("crud.delete resource=foreshadowing project_id=%s entity_id=%s", project_id, foreshadowing_id)
     return {"ok": True}

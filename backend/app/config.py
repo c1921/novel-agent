@@ -36,6 +36,14 @@ class Settings(BaseModel):
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     llm_provider: str = os.getenv("LLM_PROVIDER", "auto")
     index_storage_path: Path = INDEX_STORAGE_DIR
+    app_log_level: str = os.getenv("APP_LOG_LEVEL", "INFO")
+    app_log_to_file: bool = os.getenv("APP_LOG_TO_FILE", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    app_log_file: str = os.getenv("APP_LOG_FILE", "./storage/logs/app.log")
 
 
 settings = Settings()
